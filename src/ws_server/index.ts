@@ -1,25 +1,9 @@
 import WebSocket, { WebSocketServer } from 'ws';
-import crypto from 'crypto';
+import crypto, { UUID } from 'crypto';
+import { BroadcastMsgType, RoomId, IRoomUser } from '../types/types';
+import { DB } from '../db/db';
 
-type UUID = `${string}-${string}-${string}-${string}-${string}`;
-
-type UserName = string;
-
-interface IUser {
-  name: string;
-  password: string;
-  id: UUID;
-  ws: WebSocket;
-  wins: number;
-}
-
-interface IWiner {
-  name: string;
-  wins: number;
-}
-
-const users: Record<UserName, IUser> = {};
-const winers: Record<UserName, IWiner> = {};
+let db = new DB();
 
 export const wsServer = () => {
     const webSocketServer = new WebSocketServer({port: 3000});
@@ -28,6 +12,7 @@ export const wsServer = () => {
         ws.on('error', console.error);
 
         const id = crypto.randomUUID();
+        console.log(id);
 
         ws.on('message', function message(message) {
           const messageObj = JSON.parse(message.toString());
@@ -35,7 +20,16 @@ export const wsServer = () => {
             case "reg":
               handleUserReg(ws, id, messageObj);
               updateWinners();
-              break
+              updateRooms();
+              break;
+            case "create_room":
+              handleCreateRoom(id);
+              updateRooms();
+              break;
+            case "add_user_to_room":
+              addUserToRoom(id, messageObj);
+              updateRooms();
+              break;
           }
         });
     });
@@ -50,12 +44,11 @@ function handleUserReg(ws: WebSocket, id: UUID, message) {
     errorText: '',
   };
 
-  if(!users[name]) {
-    users[name] = {name, password, id, ws, wins: 0}
+  if(!db.users.getUser(name)) {
+    db.users.setUser(name, {name, password, id, ws, wins: 0 });
   } else {
-    if(users[name].password === password) {
-      users[name].id = id;
-      users[name].ws = ws;
+    if(db.users.getUser(name)?.password === password) {
+      db.users.updateUserWs(name, id, ws);
     } else {
       resData.error = true;
       resData.errorText = 'Password incorrect';
@@ -71,14 +64,66 @@ function handleUserReg(ws: WebSocket, id: UUID, message) {
   ws.send(JSON.stringify(response))
 }
 
-function updateWinners() {
-  const response = {
-    type: "update_winners",
-    data: JSON.stringify(Object.values(winers)),
-    id: 0,
+function handleCreateRoom(wsId: UUID) {
+  const roomWs = db.getFreeRoomIdByUserId(wsId);
+  if(roomWs) {
+    return;
   }
 
-  Object.values(users).forEach(user => {
+  const roomId = crypto.randomUUID();
+  const user = db.users.getUserByWsId(wsId);
+  if(user) {
+    db.createFreeRoom(roomId, { name: user.name, index: wsId});
+  }
+}
+
+function addUserToRoom(wsId: UUID, message) {
+  const { indexRoom } = JSON.parse(message.data);
+  const freeRoom = db.freeRooms[indexRoom];
+  if(!freeRoom) {
+    return;
+  }
+  if(freeRoom.roomUsers.length >= 2 || freeRoom.roomUsers[0].index === wsId) {
+    return;
+  }
+
+  const user = db.users.getUserByWsId(wsId);
+  if(user) {
+    db.freeRooms[indexRoom].roomUsers[1] = {name: user.name, index: wsId};
+    updateRooms();
+    createGame(indexRoom, db.freeRooms[indexRoom].roomUsers);
+  }
+}
+
+function createGame(roomId: RoomId, roomUsers: Array<IRoomUser>) {
+  db.createGameRoom(roomId, roomUsers);
+  db.deleteFreeRoom(roomId);
+  db.deleteFreeRoomByUserId(roomUsers[1].index);
+
+  db.gameRooms[roomId].roomUsers.forEach(roomUser => {
+    const response = {
+      type: "create_game",
+      data: JSON.stringify({ roomId, idPlayer: roomUser.index }),
+      id: 0,
+    }
+    db.users.getUser(roomUser.name)?.ws.send(JSON.stringify(response));
+  })
+}
+
+function updateWinners() {
+  const data = JSON.stringify(Object.values(db.winers));
+  broadcastMsg("update_winners", data);
+}
+
+function updateRooms() {
+  const data = JSON.stringify(Object.values(db.freeRooms));
+  broadcastMsg("update_room", data);
+}
+
+function broadcastMsg(type: BroadcastMsgType, data: string) {
+  const response = { type, data, id: 0 };
+
+  db.users.get().forEach(user => {
     user.ws.send(JSON.stringify(response));
   })
 }
