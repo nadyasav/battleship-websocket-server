@@ -1,4 +1,4 @@
-import { IRoom, IWiner, RoomId, IRoomUser, UserName, WsId } from "../types/types";
+import { IRoom, IWiner, RoomId, IRoomUser, UserName, WsId, IGameFieldCell, UUID, IGameRoom, IPlayer, IShip } from "../types/types";
 import { Users } from "./users";
 
 export class DB {
@@ -6,7 +6,8 @@ export class DB {
     winers: Record<UserName, IWiner>;
     freeRooms: Record<RoomId, IRoom>;
     private freeRoomsIdByUserId: Record<WsId, RoomId>;
-    gameRooms: Record<RoomId, IRoom>;
+    gameRooms: Record<RoomId, IGameRoom>;
+    gameField: Array<Array<IGameFieldCell>>;
 
     constructor() {
         this.users = new Users();
@@ -14,6 +15,7 @@ export class DB {
         this.freeRooms = {};
         this.freeRoomsIdByUserId = {};
         this.gameRooms = {};
+        this.gameField = [];
     }
 
     createFreeRoom(roomId: RoomId, user: IRoomUser) {
@@ -25,8 +27,11 @@ export class DB {
         return this.freeRoomsIdByUserId[wsId];
     }
 
-    createGameRoom(roomId: RoomId, roomUsers: Array<IRoomUser>) {
-        this.gameRooms[roomId] = { roomId, roomUsers };
+    createGameRoom(roomId: RoomId, playersArr: Array<IRoomUser>) {
+        const players: Record<UUID, IPlayer> = {};
+        players[playersArr[0].index] = { ...playersArr[0], enemy: playersArr[1].index }
+        players[playersArr[1].index] = { ...playersArr[1], enemy: playersArr[0].index }
+        this.gameRooms[roomId] = { roomId, players, gameStarted: false };
     }
 
     deleteFreeRoom(roomId: RoomId) {
@@ -39,5 +44,13 @@ export class DB {
         const idFreeRoomId = this.freeRoomsIdByUserId[userId];
         delete this.freeRooms[idFreeRoomId];
         delete this.freeRoomsIdByUserId[userId];
+    }
+
+    setPlayerShips(gameId: RoomId, indexPlayer: UUID, ships: Array<IShip>, field: Array<Array<IGameFieldCell>>) {
+        const player = this.gameRooms[gameId].players[indexPlayer];
+        this.gameRooms[gameId].players[indexPlayer] = { ...player, ships, field };
+        if(!this.gameRooms[gameId].turn) {
+            this.gameRooms[gameId].turn = indexPlayer;
+        }
     }
 }

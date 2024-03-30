@@ -1,6 +1,6 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import crypto, { UUID } from 'crypto';
-import { BroadcastMsgType, RoomId, IRoomUser } from '../types/types';
+import { BroadcastMsgType, RoomId, IRoomUser, IGameFieldCell, IShip } from '../types/types';
 import { DB } from '../db/db';
 
 let db = new DB();
@@ -16,6 +16,7 @@ export const wsServer = () => {
 
         ws.on('message', function message(message) {
           const messageObj = JSON.parse(message.toString());
+          console.log(messageObj.type)
           switch (messageObj.type) {
             case "reg":
               handleUserReg(ws, id, messageObj);
@@ -29,6 +30,9 @@ export const wsServer = () => {
             case "add_user_to_room":
               addUserToRoom(id, messageObj);
               updateRooms();
+              break;
+            case "add_ships":
+              addShips(messageObj);
               break;
           }
         });
@@ -100,13 +104,80 @@ function createGame(roomId: RoomId, roomUsers: Array<IRoomUser>) {
   db.deleteFreeRoom(roomId);
   db.deleteFreeRoomByUserId(roomUsers[1].index);
 
-  db.gameRooms[roomId].roomUsers.forEach(roomUser => {
+  Object.values(db.gameRooms[roomId].players).forEach(roomUser => {
     const response = {
       type: "create_game",
-      data: JSON.stringify({ roomId, idPlayer: roomUser.index }),
+      data: JSON.stringify({ idGame: roomId, idPlayer: roomUser.index }),
       id: 0,
     }
     db.users.getUser(roomUser.name)?.ws.send(JSON.stringify(response));
+  })
+}
+
+function addShips(message) {
+    const { gameId, ships, indexPlayer } = JSON.parse(message.data);
+
+    try {
+      if(!db.gameRooms[gameId]){
+        throw new Error('Not exist: gameId');
+      }
+
+      if(!db.gameRooms[gameId].players[indexPlayer]) {
+        throw new Error('Not valid: indexPlayer');
+      }
+
+      if(db.gameRooms[gameId].gameStarted) {
+        return;
+      }
+
+      const field = createFreeGameField();
+      ships.forEach((ship: IShip) => {
+        if(!isShipValid(ship)) {
+          throw new Error('Not valid ship params');
+        }
+
+        setShip(ship, field);
+      })
+
+      db.setPlayerShips(gameId, indexPlayer, ships, field);
+
+      const playersWithShips = Object.values(db.gameRooms[gameId].players).filter((player) => !!player.ships);
+      if(playersWithShips.length === 2) {
+        startGame(gameId);
+        const playerTurn = db.gameRooms[gameId].turn;
+        if(playerTurn) {
+          turn(gameId, playerTurn);
+        }
+      }
+    } catch (e) {
+      console.log(e.message);
+      return;
+    }
+}
+
+function startGame(gameId: RoomId) {
+  const response = {
+    type: "start_game",
+    data: {},
+    id: 0,
+  };
+
+  db.gameRooms[gameId].gameStarted = true;
+  Object.values(db.gameRooms[gameId].players).forEach(player => {
+    response.data = JSON.stringify({ ships: player.ships, currentPlayerIndex: player.index });
+    db.users.getUser(player.name)?.ws.send(JSON.stringify(response));
+  })
+}
+
+function turn(gameId: RoomId, currentPlayer: UUID) {
+  const response = {
+    type: "turn",
+    data: JSON.stringify({ currentPlayer }),
+    id: 0,
+  };
+
+  Object.values(db.gameRooms[gameId].players).forEach(player => {
+    db.users.getUser(player.name)?.ws.send(JSON.stringify(response));
   })
 }
 
@@ -126,4 +197,50 @@ function broadcastMsg(type: BroadcastMsgType, data: string) {
   db.users.get().forEach(user => {
     user.ws.send(JSON.stringify(response));
   })
+}
+
+function createFreeGameField() {
+  const field: Array<Array<IGameFieldCell>> = [];
+  for(let i = 0; i < 10; i++){
+    const arr: Array<IGameFieldCell> = [];
+    for(let j = 0; j < 10; j++){
+      arr.push({y: i, x: j, index: 0, status: "default"})
+    }
+    field.push(arr);
+  }
+  return field;
+}
+
+function isShipValid(ship: IShip): boolean {
+  const { y, x } = ship.position;
+  const isXYInField = y >= 0 && x >= 0 && y <= 9 && x <= 9;
+  const isShipLengthValid = ship.length > 0 && ship.length <= 4;
+  if(!isXYInField || !isShipLengthValid) {
+    return false;
+  }
+  const shipLastCell = ship.direction ? y + ship.length - 1 : x + ship.length - 1;
+  return shipLastCell <= 9;
+}
+
+function setShip(ship: IShip, field: Array<Array<IGameFieldCell>>) {
+  const yLength = ship.direction ? ship.position.y + ship.length : ship.position.y + 1;
+  const xLength = ship.direction ? ship.position.x + 1 : ship.position.x + ship.length;
+  for(let y = ship.position.y - 1; y <= yLength; y++){
+    for(let x = ship.position.x - 1; x <= xLength; x++){
+      const isXYInField = y >= 0 && y <= 9 && x >= 0 && x <= 9;
+      if(!isXYInField){
+        continue;
+      }
+      if(field[y][x].ship) {
+        throw new Error('Not valid ship params');
+      }
+
+      field[y][x].index = 1;
+      //console.log('ship with borders: ', field[y][x]);
+      const isShipCell = y >= ship.position.y && y < yLength && x >= ship.position.x && x < xLength;
+      if(isShipCell) {
+        field[y][x].ship = {...ship, lifes: ship.length};
+      }
+    }
+  }
 }
