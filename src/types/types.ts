@@ -5,6 +5,7 @@ export type UserName = string;
 export type RoomId = UUID;
 export type WsId = UUID;
 export type BroadcastMsgType = "update_room" | "update_winners";
+export type ShipStatus = "miss" | "killed" | "shot";
 
 export interface IUser {
   name: string;
@@ -25,9 +26,14 @@ export interface IRoomUser {
 }
 
 export interface IPlayer extends IRoomUser {
-  ships?: Array<IShip>;
-  field?: Array<Array<IGameFieldCell>>;
   enemy: UUID;
+  ships?: IPlayerShips;
+}
+
+export interface IPlayerShips {
+  ships: Array<IShip>;
+  field: Array<Array<IGameFieldCell>>;
+  shipsCount: number;
 }
 
 export interface IRoom {
@@ -54,12 +60,20 @@ export interface IShip {
 
 export interface IShipCell extends IShip{
   lifes: number;
+  borders: Array<{ y: number; x: number }>;
+  cells: Array<{ y: number; x: number }>;
 }
 
 export interface IGameFieldCell{
   y: number;
   x: number;
   index: 0 | 1;
-  status: "miss" | "killed" | "shot" | "default";
+  status: ShipStatus | "default";
   ship?: IShipCell;
+}
+
+export interface IAttackResData {
+  position: { x: number, y: number },
+  currentPlayer: string,
+  status: ShipStatus,
 }

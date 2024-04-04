@@ -3,19 +3,19 @@ import { Users } from "./users";
 
 export class DB {
     users: Users;
-    winers: Record<UserName, IWiner>;
+    winers: Map<UserName, IWiner>;
     freeRooms: Record<RoomId, IRoom>;
     private freeRoomsIdByUserId: Record<WsId, RoomId>;
     gameRooms: Record<RoomId, IGameRoom>;
-    gameField: Array<Array<IGameFieldCell>>;
+    //gameField: Array<Array<IGameFieldCell>>;
 
     constructor() {
         this.users = new Users();
-        this.winers = {};
+        this.winers = new Map();
         this.freeRooms = {};
         this.freeRoomsIdByUserId = {};
         this.gameRooms = {};
-        this.gameField = [];
+        //this.gameField = [];
     }
 
     createFreeRoom(roomId: RoomId, user: IRoomUser) {
@@ -48,7 +48,7 @@ export class DB {
 
     setPlayerShips(gameId: RoomId, indexPlayer: UUID, ships: Array<IShip>, field: Array<Array<IGameFieldCell>>) {
         const player = this.gameRooms[gameId].players[indexPlayer];
-        this.gameRooms[gameId].players[indexPlayer] = { ...player, ships, field };
+        this.gameRooms[gameId].players[indexPlayer] = { ...player, ships: { ships, field, shipsCount: 10 } };
         if(!this.gameRooms[gameId].turn) {
             this.gameRooms[gameId].turn = indexPlayer;
         }

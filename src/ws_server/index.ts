@@ -1,6 +1,6 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import crypto, { UUID } from 'crypto';
-import { BroadcastMsgType, RoomId, IRoomUser, IGameFieldCell, IShip } from '../types/types';
+import { BroadcastMsgType, RoomId, IRoomUser, IGameFieldCell, IShip, ShipStatus, IPlayerShips, IAttackResData } from '../types/types';
 import { DB } from '../db/db';
 
 let db = new DB();
@@ -33,6 +33,9 @@ export const wsServer = () => {
               break;
             case "add_ships":
               addShips(messageObj);
+              break;
+            case "attack":
+              attack(id, messageObj);
               break;
           }
         });
@@ -155,6 +158,117 @@ function addShips(message) {
     }
 }
 
+function attack(wsId: UUID, message) {
+  const { gameId, x, y, indexPlayer } = JSON.parse(message.data);
+
+  try {
+    if(!db.gameRooms[gameId]){
+      throw new Error('Not exist: gameId');
+    }
+
+    if(db.gameRooms[gameId].turn !== indexPlayer) {
+      return;
+    }
+
+    const isXYInField = y >= 0 && x >= 0 && y <= 9 && x <= 9;
+    if(!isXYInField) {
+      throw new Error('Not valid: x | y');
+    }
+  } catch (e) {
+    console.log(e.message);
+    return;
+  }
+
+  const enemyId = db.gameRooms[gameId].players[indexPlayer].enemy;
+  const ships = db.gameRooms[gameId].players[enemyId].ships;
+  if(!ships) {
+    return;
+  }
+  const shotStatus = shot(ships, x, y);
+  console.log(shotStatus);
+
+  if(!shotStatus) {
+    return;
+  }
+
+  const ship = ships.field[y][x].ship;
+  const resData = {
+    position: { x, y },
+    currentPlayer: indexPlayer,
+    status: shotStatus
+  }
+  let nextTurnPlayerId = indexPlayer;
+
+  switch (shotStatus) {
+    case "killed":
+      handleResultAttack(gameId, resData, ship?.cells);
+      resData.status = "miss";
+      handleResultAttack(gameId, resData, ship?.borders);
+      break;
+    case "shot":
+      returnResultAttack(gameId, resData);
+      break;
+    case "miss":
+      returnResultAttack(gameId, resData);
+      db.gameRooms[gameId].turn = enemyId;
+      nextTurnPlayerId = enemyId;
+      break;
+  }
+
+  turn(gameId, nextTurnPlayerId);
+  if(ships.shipsCount) {
+    return;
+  }
+
+  finish(gameId, indexPlayer);
+  const winnerName = db.users.getUserByWsId(wsId)?.name;
+  if(!winnerName) {
+    return;
+  }
+  const winner = db.winers.get(winnerName);
+  if(winner) {
+    winner.wins++;
+  } else {
+    db.winers.set(winnerName, { name: winnerName, wins: 1 });
+  }
+  updateWinners();
+}
+
+function handleResultAttack(gameId: UUID, resData: IAttackResData, cells?: Array<{ y: number; x: number }>) {
+  if(cells) {
+    cells.forEach(({ y, x }) => {
+      resData.position = { x, y };
+      returnResultAttack(gameId, resData)
+    })
+  } else {
+    returnResultAttack(gameId, resData)
+  }
+}
+
+function returnResultAttack(gameId: RoomId, resData: IAttackResData ) {
+  const response = JSON.stringify({
+    type: "attack",
+    data: JSON.stringify({ ...resData }),
+    id: 0,
+  });
+
+  Object.values(db.gameRooms[gameId].players).forEach(player => {
+    db.users.getUser(player.name)?.ws.send(response);
+  })
+}
+
+function finish(gameId: RoomId, winPlayer: string) {
+  const response = JSON.stringify({
+    type: "finish",
+    data: JSON.stringify({ winPlayer }),
+    id: 0,
+  });
+
+  Object.values(db.gameRooms[gameId].players).forEach(player => {
+    db.users.getUser(player.name)?.ws.send(response);
+  })
+}
+
 function startGame(gameId: RoomId) {
   const response = {
     type: "start_game",
@@ -182,7 +296,7 @@ function turn(gameId: RoomId, currentPlayer: UUID) {
 }
 
 function updateWinners() {
-  const data = JSON.stringify(Object.values(db.winers));
+  const data = JSON.stringify(Array.from(db.winers.values()));
   broadcastMsg("update_winners", data);
 }
 
@@ -225,6 +339,10 @@ function isShipValid(ship: IShip): boolean {
 function setShip(ship: IShip, field: Array<Array<IGameFieldCell>>) {
   const yLength = ship.direction ? ship.position.y + ship.length : ship.position.y + 1;
   const xLength = ship.direction ? ship.position.x + 1 : ship.position.x + ship.length;
+  const borders: Array<{ y: number; x: number }> = [];
+  const cells: Array<{ y: number; x: number }> = [];
+  const fieldCellShip = {...ship, lifes: ship.length, borders, cells};
+
   for(let y = ship.position.y - 1; y <= yLength; y++){
     for(let x = ship.position.x - 1; x <= xLength; x++){
       const isXYInField = y >= 0 && y <= 9 && x >= 0 && x <= 9;
@@ -236,11 +354,33 @@ function setShip(ship: IShip, field: Array<Array<IGameFieldCell>>) {
       }
 
       field[y][x].index = 1;
-      //console.log('ship with borders: ', field[y][x]);
       const isShipCell = y >= ship.position.y && y < yLength && x >= ship.position.x && x < xLength;
       if(isShipCell) {
-        field[y][x].ship = {...ship, lifes: ship.length};
+        cells.push({ y, x });
+        field[y][x].ship = fieldCellShip;
+      } else {
+        borders.push({ y, x });
       }
     }
+  }
+}
+
+function shot(ships: IPlayerShips, x: number, y: number): ShipStatus | undefined {
+  const cell = ships.field[y][x];
+
+  if(cell.status !== 'default') {
+    return;
+  }
+
+  if(!cell.ship){
+    return cell.status = 'miss';
+  }
+
+  cell.ship.lifes--;
+  if(cell.ship.lifes) {
+    return cell.status = 'shot';
+  } else {
+    ships.shipsCount--;
+    return cell.status = 'killed';
   }
 }
