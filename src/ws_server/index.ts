@@ -221,6 +221,8 @@ function attack(wsId: UUID, message) {
   }
 
   finish(gameId, indexPlayer);
+  delete db.gameRooms[gameId];
+
   const winnerName = db.users.getUserByWsId(wsId)?.name;
   if(!winnerName) {
     return;
@@ -381,6 +383,7 @@ function shot(ships: IPlayerShips, x: number, y: number): ShipStatus | undefined
     return cell.status = 'shot';
   } else {
     ships.shipsCount--;
+    cell.ship.borders.forEach(({x, y}) => ships.field[y][x].status = 'miss')
     return cell.status = 'killed';
   }
 }
