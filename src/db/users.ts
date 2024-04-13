@@ -27,10 +27,10 @@ export class Users {
     }
 
     updateUserWs(name: string, wsId: WsId, ws: WebSocket) {
-        delete this.userNameByWsId[this.users[name].id];
-        this.userNameByWsId[wsId] = name;
         const user = this.users.get(name);
         if(user) {
+            delete this.userNameByWsId[user.id];
+            this.userNameByWsId[wsId] = name;
             user.id = wsId;
             user.ws = ws;
         }

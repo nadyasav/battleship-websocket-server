@@ -1,3 +1,4 @@
+import { SHIPS_COUNT } from "../constants";
 import { IRoom, IWiner, RoomId, IRoomUser, UserName, WsId, IGameFieldCell, UUID, IGameRoom, IPlayer, IShip } from "../types/types";
 import { Users } from "./users";
 
@@ -48,7 +49,7 @@ export class DB {
 
     setPlayerShips(gameId: RoomId, indexPlayer: UUID, ships: Array<IShip>, field: Array<Array<IGameFieldCell>>) {
         const player = this.gameRooms[gameId].players[indexPlayer];
-        this.gameRooms[gameId].players[indexPlayer] = { ...player, ships: { ships, field, shipsCount: 10 } };
+        this.gameRooms[gameId].players[indexPlayer] = { ...player, ships: { ships, field, shipsCount: SHIPS_COUNT } };
         if(!this.gameRooms[gameId].turn) {
             this.gameRooms[gameId].turn = indexPlayer;
         }

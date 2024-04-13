@@ -6,6 +6,12 @@ export type RoomId = UUID;
 export type WsId = UUID;
 export type BroadcastMsgType = "update_room" | "update_winners";
 export type ShipStatus = "miss" | "killed" | "shot";
+export enum CellStatus {
+  MISS = "miss",
+  KILLED = "killed",
+  SHOT = "shot",
+  DEFAULT = "default"
+}
 
 export interface IUser {
   name: string;
@@ -68,7 +74,7 @@ export interface IGameFieldCell{
   y: number;
   x: number;
   index: 0 | 1;
-  status: ShipStatus | "default";
+  status: CellStatus;
   ship?: IShipCell;
 }
 
