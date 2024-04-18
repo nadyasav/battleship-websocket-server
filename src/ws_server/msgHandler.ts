@@ -2,7 +2,7 @@ import { handleUserReg } from './userReg';
 import { RequestMsgType } from '../types/msgTypes';
 import { addUserToRoom, createRoom } from './rooms';
 import { addShips } from './ships';
-import { attack } from './attack';
+import { attack, randomAttack } from './attack';
 import { UUID } from '../types/types';
 import WebSocket from 'ws';
 
@@ -29,6 +29,9 @@ export function handleMsg(ws: WebSocket, id: UUID, message: string) {
             break;
         case RequestMsgType.ATTACK:
             attack(id, data);
+            break;
+        case RequestMsgType.RANDOM_ATTACK:
+            randomAttack(id, data);
             break;
     }
 }

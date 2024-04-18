@@ -12,6 +12,10 @@ export enum CellStatus {
   SHOT = "shot",
   DEFAULT = "default"
 }
+export type XY = { x: number; y: number };
+export type GameField = Array<Array<IGameFieldCell>>;
+export type XYKey =`${number}.${number}`;
+export type FreeCells = Map<XYKey, XY>;
 
 export interface IUser {
   name: string;
@@ -38,8 +42,9 @@ export interface IPlayer extends IRoomUser {
 
 export interface IPlayerShips {
   ships: Array<IShip>;
-  field: Array<Array<IGameFieldCell>>;
+  field: GameField;
   shipsCount: number;
+  freeCells: FreeCells;
 }
 
 export interface IRoom {
@@ -55,10 +60,7 @@ export interface IGameRoom{
 }
 
 export interface IShip {
-  position: {
-    x: number;
-    y: number;
-  };
+  position: XY;
   direction: boolean;
   type: "small" | "medium" | "large" | "huge";
   length: number;
@@ -66,20 +68,24 @@ export interface IShip {
 
 export interface IShipCell extends IShip{
   lifes: number;
-  borders: Array<{ y: number; x: number }>;
-  cells: Array<{ y: number; x: number }>;
+  borders: Array<XY>;
+  cells: Array<XY>;
 }
 
 export interface IGameFieldCell{
   y: number;
   x: number;
-  index: 0 | 1;
   status: CellStatus;
   ship?: IShipCell;
 }
 
 export interface IAttackResData {
-  position: { x: number, y: number },
+  position: XY,
   currentPlayer: string,
   status: ShipStatus,
+}
+
+export interface FreeFieldAndCells {
+  field: GameField;
+  freeCells: FreeCells;
 }

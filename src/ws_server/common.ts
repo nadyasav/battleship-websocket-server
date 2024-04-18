@@ -9,7 +9,7 @@ export function turn(gameId: RoomId, currentPlayer: UUID) {
       id: 0,
     };
 
-    Object.values(db.gameRooms[gameId].players).forEach(player => {
+    Object.values(db.gameRooms.rooms[gameId].players).forEach(player => {
       db.users.getUser(player.name)?.ws.send(JSON.stringify(response));
     })
 }
@@ -20,7 +20,7 @@ export function updateWinners() {
 }
 
 export function updateRooms() {
-    const data = JSON.stringify(Object.values(db.freeRooms));
+    const data = JSON.stringify(Object.values(db.freeRooms.rooms));
     broadcastMsg(ResponseMsgType.UPDATE_ROOM, data);
 }
 

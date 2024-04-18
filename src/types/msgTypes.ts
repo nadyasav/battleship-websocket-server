@@ -5,7 +5,8 @@ export enum RequestMsgType {
     CREATE_ROOM = "create_room",
     ADD_USER_TO_ROOM = "add_user_to_room",
     ADD_SHIPS = "add_ships",
-    ATTACK = "attack"
+    ATTACK = "attack",
+    RANDOM_ATTACK = "randomAttack"
 }
 
 export enum ResponseMsgType {
@@ -19,11 +20,13 @@ export enum ResponseMsgType {
     CREATE_GAME = "create_game"
 }
 
-export interface IRequestAttack {
+export interface RequestGameData {
     gameId: UUID;
+    indexPlayer: UUID;
+}
+export interface RequestAttack extends RequestGameData{
     x: number;
     y: number;
-    indexPlayer: UUID;
 }
 
 export interface IRequestReg {
@@ -31,10 +34,8 @@ export interface IRequestReg {
     password: string;
 }
 
-export interface IRequestAddShips{
-    gameId: UUID;
+export interface IRequestAddShips extends RequestGameData{
     ships: Array<IShip>;
-    indexPlayer: UUID;
 }
 
 export interface IRequestAddUserToRoom {

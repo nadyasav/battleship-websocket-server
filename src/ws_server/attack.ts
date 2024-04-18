@@ -1,43 +1,51 @@
 import { db } from ".";
 import { errorText } from "../constants";
-import { IRequestAttack, ResponseMsgType } from "../types/msgTypes";
-import { CellStatus, IAttackResData, IPlayerShips, RoomId, ShipStatus, UUID } from "../types/types";
+import { RequestAttack, RequestGameData, ResponseMsgType } from "../types/msgTypes";
+import { CellStatus, FreeCells, IAttackResData, IPlayerShips, RoomId, ShipStatus, UUID, XY, XYKey } from "../types/types";
 import { isXYInField } from "../utils";
 import { turn, updateWinners } from "./common";
 
-export function attack(wsId: UUID, data: IRequestAttack) {
+export function attack(wsId: UUID, data: RequestAttack) {
+    if(getAttackValidationError(data, { x: data.x, y: data.y })) {
+      return;
+    }
+
+    handleAttack(wsId, data);
+}
+
+export async function randomAttack(wsId: UUID, data: RequestGameData) {
+  const { gameId, indexPlayer } = data;
+
+  if(getAttackValidationError(data)) {
+    return;
+  }
+
+  const ships = db.gameRooms.getEnemy(gameId, indexPlayer).ships;
+  if(!ships) {
+    return;
+  }
+
+  const size = ships.freeCells.size;
+  const randomIndex = Math.floor(Math.random() * size);
+  const coords = Array.from(ships.freeCells.values())[randomIndex];
+  handleAttack(wsId, { ...data, ...coords })
+}
+
+function handleAttack(wsId: UUID, data: RequestAttack) {
     const { gameId, x, y, indexPlayer } = data;
 
-    try {
-      if(!db.gameRooms[gameId]){
-        throw new Error(`${errorText.NOT_EXIST}: ${gameId}`);
-      }
-
-      if(db.gameRooms[gameId].turn !== indexPlayer) {
-        return;
-      }
-
-      if(!isXYInField(x, y)) {
-        throw new Error(`${errorText}: x | y`);
-      }
-    } catch (e) {
-      console.log(e.message);
+    const enemy = db.gameRooms.getEnemy(gameId, indexPlayer);
+    if(!enemy.ships) {
       return;
     }
-
-    const enemyId = db.gameRooms[gameId].players[indexPlayer].enemy;
-    const ships = db.gameRooms[gameId].players[enemyId].ships;
-    if(!ships) {
-      return;
-    }
-    const shotStatus = shot(ships, x, y);
+    const shotStatus = shot(enemy.ships, x, y);
     console.log(shotStatus);
 
     if(!shotStatus) {
       return;
     }
 
-    const ship = ships.field[y][x].ship;
+    const ship = enemy.ships.field[y][x].ship;
     const resData = {
       position: { x, y },
       currentPlayer: indexPlayer,
@@ -56,30 +64,57 @@ export function attack(wsId: UUID, data: IRequestAttack) {
         break;
       case CellStatus.MISS:
         returnResultAttack(gameId, resData);
-        db.gameRooms[gameId].turn = enemyId;
-        nextTurnPlayerId = enemyId;
+        db.gameRooms.rooms[gameId].turn = enemy.index;
+        nextTurnPlayerId = enemy.index;
         break;
     }
 
     turn(gameId, nextTurnPlayerId);
-    if(ships.shipsCount) {
+    if(enemy.ships.shipsCount) {
       return;
     }
 
     finish(gameId, indexPlayer);
-    delete db.gameRooms[gameId];
+    delete db.gameRooms.rooms[gameId];
+    setWinner(wsId);
+    updateWinners();
+}
 
+function getAttackValidationError(data: RequestGameData, coords?: XY ): Error | undefined {
+    const { gameId, indexPlayer } = data;
+
+    try {
+      if(!db.gameRooms.rooms[gameId]){
+        throw new Error(`${errorText.NOT_EXIST}: ${gameId}`);
+      }
+
+      if(db.gameRooms.rooms[gameId].turn !== indexPlayer) {
+        throw new Error();
+      }
+
+      if(coords) {
+        if(!isXYInField(coords.x, coords.y)) {
+          throw new Error(`${errorText.NOT_VALID}: x | y`);
+        }
+      }
+    } catch (e) {
+      console.log(e.message);
+      return e;
+    }
+}
+
+function setWinner(wsId: UUID) {
     const winnerName = db.users.getUserByWsId(wsId)?.name;
     if(!winnerName) {
       return;
     }
+
     const winner = db.winers.get(winnerName);
     if(winner) {
       winner.wins++;
     } else {
       db.winers.set(winnerName, { name: winnerName, wins: 1 });
     }
-    updateWinners();
 }
 
 function handleResultAttack(gameId: UUID, resData: IAttackResData, cells?: Array<{ y: number; x: number }>) {
@@ -101,15 +136,20 @@ function shot(ships: IPlayerShips, x: number, y: number): ShipStatus | undefined
   }
 
   if(!cell.ship){
+    deleteFreeCell(ships.freeCells, { x, y });
     return cell.status = CellStatus.MISS;
   }
 
   cell.ship.lifes--;
+  deleteFreeCell(ships.freeCells, { x, y });
   if(cell.ship.lifes) {
     return cell.status = CellStatus.SHOT;
   } else {
     ships.shipsCount--;
-    cell.ship.borders.forEach(({x, y}) => ships.field[y][x].status = CellStatus.MISS)
+    cell.ship.borders.forEach(({x, y}) => {
+      ships.field[y][x].status = CellStatus.MISS;
+      deleteFreeCell(ships.freeCells, { x, y });
+    })
     return cell.status = CellStatus.KILLED;
   }
 }
@@ -121,7 +161,7 @@ function returnResultAttack(gameId: RoomId, resData: IAttackResData ) {
       id: 0,
     });
 
-    Object.values(db.gameRooms[gameId].players).forEach(player => {
+    Object.values(db.gameRooms.rooms[gameId].players).forEach(player => {
       db.users.getUser(player.name)?.ws.send(response);
     })
 }
@@ -133,7 +173,15 @@ function finish(gameId: RoomId, winPlayer: string) {
       id: 0,
     });
 
-    Object.values(db.gameRooms[gameId].players).forEach(player => {
+    Object.values(db.gameRooms.rooms[gameId].players).forEach(player => {
       db.users.getUser(player.name)?.ws.send(response);
     })
+}
+
+function deleteFreeCell(freeCells: FreeCells, { x, y }: XY) {
+    const key: XYKey = `${x}.${y}`;
+    const freeCell = freeCells.get(key);
+    if(freeCell) {
+        freeCells.delete(key);
+    }
 }
