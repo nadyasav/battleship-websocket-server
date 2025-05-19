@@ -1,3 +1,8 @@
+Task: https://github.com/AlreadyBored/nodejs-assignments/blob/main/assignments/battleship/assignment.md   
+Deadline 2025-05-20 01:00   
+
+---
+
 # RSSchool NodeJS websocket task template
 > Static http server and base task packages. 
 > By default WebSocket client tries to connect to the 3000 port.

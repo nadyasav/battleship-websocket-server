@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { DB } from '../db/db';
 import { handleMsg } from './msgHandler';
 import { PORT } from '../constants';
+import { disconnect } from './disconnect';
 
 export const db = new DB();
 
@@ -17,6 +18,11 @@ export const wsServer = () => {
 
         ws.on('message', function message(message) {
           handleMsg(ws, id, message.toString());
+        });
+
+        ws.on('close', () => {
+          console.log('Disconnect: ', id);
+          //disconnect(id);
         });
     });
 }
