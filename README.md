@@ -4,7 +4,7 @@ Score: 135/188
 
 * Websocket   
 - [x] - +6 Implemented workable websocket server
-- [-] - +3 Handle websocket clients connection/disconnection properly (disconnection not implementted)
+- [x] - +3/6 Handle websocket clients connection/disconnection properly (disconnection not implemented)
 - [x] - +10 Websocket server message handler implemented properly
 - [x] - +10 Websocket server message sender implemented properly
 
